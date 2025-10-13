@@ -26,4 +26,10 @@ import java.util.function.Supplier;
         return true;
     }
 
+    @Override
+    public void set(T value) {
+        this.backing.getColdConfig().set(this, value);
+        this.backing.getColdConfig().save();
+    }
+
 }

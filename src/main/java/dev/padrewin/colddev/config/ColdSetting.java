@@ -45,6 +45,17 @@ public interface ColdSetting<T> {
         return false;
     }
 
+    /**
+     * Sets a new value into the config for this setting.
+     * Only supported for backed settings.
+     *
+     * @param value the new value to set
+     * @throws UnsupportedOperationException if the setting is not backed
+     */
+    default void set(T value) {
+        throw new UnsupportedOperationException("set() is not supported for this setting, missing backing config");
+    }
+
     default void writeDefault(CommentedConfigurationSection config, boolean writeDefaultValueComment) {
         if (!writeDefaultValueComment) {
             this.getSerializer().write(config, this, this.getDefaultValue());
