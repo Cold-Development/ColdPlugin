@@ -75,9 +75,15 @@ public final class ColdSettingSerializers {
             @Override
             public void write(CommentedConfigurationSection config, String key, T value, String... comments) {
                 M toWrite = toMapped.apply(value);
-                if (toWrite != null)
-                    config.set(key, toWrite, comments);
+                if (toWrite != null) {
+                    if (config instanceof CommentedConfigurationSection) {
+                        ((CommentedConfigurationSection) config).set(key, toWrite, comments);
+                    } else {
+                        config.set(key, toWrite);
+                    }
+                }
             }
+
         };
     }
 

@@ -156,10 +156,7 @@ public abstract class ColdPlugin extends JavaPlugin {
         this.getColdConfig();
 
         // Load managers
-        this.reload();
-
-        // Run the plugin's enable code
-        this.enable();
+        this.reload(this::enable);
     }
 
     @Override
@@ -246,13 +243,68 @@ public abstract class ColdPlugin extends JavaPlugin {
      * Reloads the plugin's managers
      */
     public void reload() {
+        this.reload(null);
+    }
+
+    public void reload(Runnable completionCallback) {
         this.disableManagers();
 
         if (this.coldConfig != null)
             this.coldConfig.reload();
 
+        this.reloadManagers(this.getReloadOrder(), completionCallback);
+    }
+
+    private void reloadManagers(List<Class<? extends Manager>> reloadOrder, Runnable completionCallback) {
+        this.reloadManagers(reloadOrder, 0, completionCallback);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void reloadManagers(List<Class<? extends Manager>> reloadOrder, int index, Runnable completionCallback) {
+        if (index >= reloadOrder.size()) {
+            this.firstInitialization = false;
+            if (completionCallback != null) {
+                completionCallback.run();
+            }
+            return;
+        }
+
+        Class<? extends Manager> managerClass = reloadOrder.get(index);
+        AtomicBoolean initialized = new AtomicBoolean();
+        Manager manager = this.getOrCreateManager(managerClass, initialized);
+        boolean shouldReload = initialized.get() || !this.firstInitialization;
+
+        if (!shouldReload) {
+            this.reloadManagers(reloadOrder, index + 1, completionCallback);
+            return;
+        }
+
+        if (managerClass == this.dataManagerClass && manager instanceof AbstractDataManager dataManager) {
+            dataManager.reloadAsync(() -> this.getScheduler().runTask(() -> {
+                if (initialized.get()) {
+                    this.managerInitializationStack.push(managerClass);
+                }
+                this.reloadManagers(reloadOrder, index + 1, completionCallback);
+            }));
+            return;
+        }
+
+        try {
+            manager.reload();
+        } catch (Exception e) {
+            throw new ManagerLoadException(managerClass, e);
+        }
+
+        if (initialized.get()) {
+            this.managerInitializationStack.push(managerClass);
+        }
+
+        this.reloadManagers(reloadOrder, index + 1, completionCallback);
+    }
+
+    private List<Class<? extends Manager>> getReloadOrder() {
         if (this.firstInitialization) {
-            List<Class<? extends Manager>> managerLoadPriority = new ArrayList<>();
+            Set<Class<? extends Manager>> managerLoadPriority = new LinkedHashSet<>();
 
             if (this.hasDataManager())
                 managerLoadPriority.add(this.dataManagerClass);
@@ -260,29 +312,20 @@ public abstract class ColdPlugin extends JavaPlugin {
             if (this.usesLocaleManager())
                 managerLoadPriority.add(this.localeManagerClass);
 
-            if (this.usesLocaleManager())
-                managerLoadPriority.add(this.localeManagerClass);
+            if (this.hasCommandManager())
+                managerLoadPriority.add(this.commandManagerClass);
 
             managerLoadPriority.addAll(this.getManagerLoadPriority());
 
             if (this.githubOwner != null && this.githubRepo != null)
                 managerLoadPriority.add(PluginUpdateManager.class);
 
-            managerLoadPriority.forEach(this::getManager);
-        } else {
-            List<Class<? extends Manager>> initStack = new ArrayList<>(this.managerInitializationStack);
-            Collections.reverse(initStack);
-            for (Class<? extends Manager> managerClass : initStack) {
-                Manager manager = this.managers.get(managerClass);
-                try {
-                    manager.reload();
-                } catch (Exception e) {
-                    throw new ManagerLoadException(managerClass, e);
-                }
-            }
+            return new ArrayList<>(managerLoadPriority);
         }
 
-        this.firstInitialization = false;
+        List<Class<? extends Manager>> initStack = new ArrayList<>(this.managerInitializationStack);
+        Collections.reverse(initStack);
+        return initStack;
     }
 
     /**
@@ -318,15 +361,7 @@ public abstract class ColdPlugin extends JavaPlugin {
         }
 
         AtomicBoolean initialized = new AtomicBoolean();
-        T manager = (T) this.managers.computeIfAbsent(lookupClass, key -> {
-            try {
-                return lookupClass.getConstructor(ColdPlugin.class).newInstance(this);
-            } catch (Exception e) {
-                throw new ManagerInitializationException(lookupClass, e);
-            } finally {
-                initialized.set(true);
-            }
-        });
+        T manager = (T) this.getOrCreateManager(lookupClass, initialized);
 
         if (initialized.get()) {
             try {
@@ -339,6 +374,18 @@ public abstract class ColdPlugin extends JavaPlugin {
         }
 
         return manager;
+    }
+
+    private Manager getOrCreateManager(Class<? extends Manager> managerClass, AtomicBoolean initialized) {
+        return this.managers.computeIfAbsent(managerClass, key -> {
+            try {
+                return managerClass.getConstructor(ColdPlugin.class).newInstance(this);
+            } catch (Exception e) {
+                throw new ManagerInitializationException(managerClass, e);
+            } finally {
+                initialized.set(true);
+            }
+        });
     }
 
     protected <T extends Manager> Class<? extends Manager> remapAbstractManagerClasses(Class<T> managerClass) {

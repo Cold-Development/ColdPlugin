@@ -31,8 +31,9 @@ public class ReloadCommand extends BaseColdCommand {
 
     @ColdExecutable
     public void execute(CommandContext context) {
-        this.coldPlugin.reload();
-        this.coldPlugin.getManager(AbstractLocaleManager.class).sendCommandMessage(context.getSender(), "command-reload-reloaded");
+        this.coldPlugin.reload(() ->
+                this.coldPlugin.getManager(AbstractLocaleManager.class)
+                        .sendCommandMessage(context.getSender(), "command-reload-reloaded"));
     }
 
 }

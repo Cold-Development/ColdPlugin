@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -58,6 +59,7 @@ public abstract class AbstractDataManager extends Manager {
     }
 
     protected DatabaseConnector databaseConnector;
+    private final AtomicBoolean reloadInProgress = new AtomicBoolean();
 
     public AbstractDataManager(ColdPlugin coldPlugin) {
         super(coldPlugin);
@@ -65,6 +67,41 @@ public abstract class AbstractDataManager extends Manager {
 
     @Override
     public void reload() {
+        this.reloadDatabase();
+    }
+
+    public final void reloadAsync(Runnable completionCallback) {
+        if (!this.reloadInProgress.compareAndSet(false, true)) {
+            return;
+        }
+
+        this.coldPlugin.getScheduler().runTaskAsync(() -> {
+            boolean loaded = false;
+            try {
+                loaded = this.reloadDatabaseInternal();
+            } finally {
+                this.reloadInProgress.set(false);
+            }
+
+            if (loaded && completionCallback != null) {
+                completionCallback.run();
+            }
+        });
+    }
+
+    private void reloadDatabase() {
+        if (!this.reloadInProgress.compareAndSet(false, true)) {
+            return;
+        }
+
+        try {
+            this.reloadDatabaseInternal();
+        } finally {
+            this.reloadInProgress.set(false);
+        }
+    }
+
+    private boolean reloadDatabaseInternal() {
         try {
             ColdConfig coldConfig = this.coldPlugin.getColdConfig();
             if (coldConfig.get(SettingKey.MYSQL_SETTINGS_ENABLED)) {
@@ -85,11 +122,23 @@ public abstract class AbstractDataManager extends Manager {
             }
 
             this.applyMigrations();
+            return true;
         } catch (Exception ex) {
             this.coldPlugin.getLogger().severe("Fatal error trying to connect to database. Please make sure all your connection settings are correct and try again. Plugin has been disabled.");
             ex.printStackTrace();
-            Bukkit.getPluginManager().disablePlugin(this.coldPlugin);
+            if (this.databaseConnector != null) {
+                this.databaseConnector.closeConnection();
+                this.databaseConnector = null;
+            }
+            Runnable disableTask = () -> Bukkit.getPluginManager().disablePlugin(this.coldPlugin);
+            if (Bukkit.isPrimaryThread()) {
+                disableTask.run();
+            } else {
+                this.coldPlugin.getScheduler().runTask(disableTask);
+            }
         }
+
+        return false;
     }
 
     @Override
