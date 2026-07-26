@@ -11,8 +11,12 @@ public final class NMSUtil {
     static {
         String bukkitVersion = Bukkit.getBukkitVersion();
         String[] parts = bukkitVersion.split("-")[0].split("\\.");
-        VERSION_NUMBER = Integer.parseInt(parts[1]);
-        MINOR_VERSION_NUMBER = parts.length >= 3 ? Integer.parseInt(parts[2]) : 0;
+        // Old format: 1.21.4 -> parts[0]="1", parts[1]="21", parts[2]="4"
+        // New format: 26.2.build.65 -> parts[0]="26", parts[1]="2", parts[2]="build"
+        boolean oldFormat = parts[0].equals("1");
+        VERSION_NUMBER = Integer.parseInt(oldFormat ? parts[1] : parts[0]);
+        int minorIndex = oldFormat ? 2 : 1;
+        MINOR_VERSION_NUMBER = parts.length > minorIndex && parts[minorIndex].matches("\\d+") ? Integer.parseInt(parts[minorIndex]) : 0;
         IS_PAPER = ClassUtils.checkClass("com.destroystokyo.paper.PaperConfig");
         IS_FOLIA = ClassUtils.checkClass("io.papermc.paper.threadedregions.RegionizedServer");
     }
