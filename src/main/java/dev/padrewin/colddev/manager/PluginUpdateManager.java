@@ -11,11 +11,11 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
-import net.md_5.bungee.api.ChatColor;
-import net.md_5.bungee.api.chat.ClickEvent;
-import net.md_5.bungee.api.chat.HoverEvent;
-import net.md_5.bungee.api.chat.TextComponent;
-import net.md_5.bungee.api.chat.hover.content.Text;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -193,15 +193,14 @@ public class PluginUpdateManager extends Manager implements Listener {
                 ColdDevUtils.sendMessage(player, updateMessage, placeholders);
 
                 if (website != null) {
-                    TextComponent clickHereComponent = new TextComponent("Click here to update");
-                    clickHereComponent.setUnderlined(true);
-                    clickHereComponent.setColor(ChatColor.GREEN);
+                    Component clickHereComponent = Component.text("Click here to update")
+                            .color(NamedTextColor.GREEN)
+                            .decorate(TextDecoration.UNDERLINED)
+                            .clickEvent(ClickEvent.openUrl(website))
+                            .hoverEvent(HoverEvent.showText(Component.text("Click to open GitHub.")));
 
-                    clickHereComponent.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, website));
-                    clickHereComponent.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new Text("Click to open GitHub.")));
-
-                    player.spigot().sendMessage(clickHereComponent);
-                    player.sendMessage("");
+                    player.sendMessage(clickHereComponent);
+                    player.sendMessage(Component.empty());
                 }
             }
         }.runTaskLater(this.coldPlugin, 150L);
